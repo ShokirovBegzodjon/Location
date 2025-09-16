@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="uz.apphub.location">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <application
+        android:name=".App"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="true"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true" />
+
+        <activity-alias
+            android:name="uz.apphub.location.AliasMain"
+            android:targetActivity="uz.apphub.location.MainActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <service
+            android:name=".service.LocationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
