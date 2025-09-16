@@ -5,7 +5,7 @@ package uz.apphub.location.repo
 data class AppSettings(
     val permission: Boolean = false,
     val gps: Boolean = false,
-    val listener: Boolean = false,
+    val listener: Boolean = true,
     val showIcon: Boolean = true
 )
 

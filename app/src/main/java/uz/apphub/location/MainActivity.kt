@@ -80,6 +80,9 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             perms.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // API 33+
+            perms.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
         permissionLauncher.launch(perms.toTypedArray())
     }
 
@@ -88,7 +91,10 @@ class MainActivity : ComponentActivity() {
         val coarse = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val bg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED else true
-        return fine && coarse && bg
+        val notifications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        else true
+        return fine && coarse && bg && notifications
     }
 
     private fun startTrackingService() {

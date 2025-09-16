@@ -2,22 +2,17 @@ package uz.apphub.location.service
 
 //* Shokirov Begzod  16.09.2025 *//
 
-import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import android.os.IBinder
-import android.provider.Settings
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -39,22 +34,23 @@ class LocationService : Service() {
         const val ACTION_START = "uz.apphub.location.START"
         const val ACTION_STOP = "uz.apphub.location.STOP"
         private const val CHANNEL_ID = "location_channel"
+        private const val LOCATION_UPDATE_INTERVAL_MS = 5000L // 5 soniya
+        private const val FASTEST_LOCATION_UPDATE_INTERVAL_MS = 2000L // 2 soniya
         private const val NOTIF_ID = 1002
     }
 
     @Inject lateinit var settingsRepo: SettingsRepository
     @Inject lateinit var firebaseRepo: FirebaseRepository
 
-    private lateinit var fusedClient: FusedLocationProviderClient
-    private var locationManager: LocationManager? = null
-    private var locationListener: LocationListener? = null
-
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var locationCallback: LocationCallback? = null // locationListener o'rniga
     private var serviceScope: CoroutineScope? = null
 
     override fun onCreate() {
         super.onCreate()
-        fusedClient = LocationServices.getFusedLocationProviderClient(this)
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         observeSettingsAndStatus()
+        Log.d("LocationService", "onCreate")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -62,7 +58,7 @@ class LocationService : Service() {
             ACTION_START -> startForegroundWithNotification()
             ACTION_STOP -> {
                 stopLocationUpdates()
-                stopForeground(true)
+                stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             else -> startForegroundWithNotification()
@@ -104,37 +100,73 @@ class LocationService : Service() {
         val channel = NotificationChannel(CHANNEL_ID, "Child Location", NotificationManager.IMPORTANCE_LOW)
         manager.createNotificationChannel(channel)
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Joylashuv yuborilmoqda")
-            .setContentText("Telefon joylashuvi serverga yuborilmoqda")
+            .setContentTitle(getString(R.string.app_name))
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE) // Muhim
             .build()
         startForeground(NOTIF_ID, notification)
     }
 
     private fun startLocationUpdates() {
-        locationManager = this.applicationContext.getSystemService(LocationManager::class.java)
-        locationListener = LocationListener { loc -> sendLocation(loc)       }
-        val permission = Manifest.permission.ACCESS_FINE_LOCATION
-        val granted =
-            ContextCompat.checkSelfPermission(this.applicationContext, permission) ==
-                    PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == false) {
-                val locationRequestIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-                this.startActivity(locationRequestIntent)
-                Log.e("TAGTAGTAG", "startLocationUpdates: Joylashu o'chiq", )
+        // Agar allaqachon tinglanayotgan bo'lsa, qayta boshlamaslik
+        if (locationCallback != null) {
+            Log.d("LocationService", "Location updates already active.")
+            return
+        }
+
+        val locationRequest = LocationRequest.Builder(
+            Priority.PRIORITY_HIGH_ACCURACY, // Yuqori aniqlik
+            LOCATION_UPDATE_INTERVAL_MS
+        ).apply {
+            setMinUpdateIntervalMillis(FASTEST_LOCATION_UPDATE_INTERVAL_MS)
+            // setGranularity(Granularity.GRANULARITY_PERMISSION_LEVEL) // Ruxsat darajasiga qarab aniqlik
+            // setWaitForAccurateLocation(true) // Birinchi aniq joylashuvni kutish
+        }.build()
+
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                locationResult.lastLocation?.let { location ->
+                    Log.d("LocationService", "New location: ${location.latitude}, ${location.longitude}, Accuracy: ${location.accuracy}")
+                    sendLocation(location)
+                } ?: run {
+                    Log.w("LocationService", "LocationResult received but lastLocation is null")
+                    // Bu holat kamdan-kam uchraydi, lekin bo'lishi mumkin
+                    // Masalan, joylashuv vaqtincha mavjud bo'lmasa
+                    locationResult.locations.firstOrNull()?.let { firstLocation ->
+                        Log.d("LocationService", "Using first location from list: ${firstLocation.latitude}, ${firstLocation.longitude}")
+                        sendLocation(firstLocation)
+                    }
+                }
             }
-            locationManager?.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER, 2000L, 1f, locationListener!!
+
+            override fun onLocationAvailability(locationAvailability: LocationAvailability) {
+                if (!locationAvailability.isLocationAvailable) {
+                    Log.w("LocationService", "Location is currently unavailable.")
+                    // Bu yerda GPS signali yo'qolganligi yoki boshqa muammolar haqida log yozish mumkin
+                    // Foydalanuvchiga xabar berish shart emas, chunki FusedLocationProvider o'zi qayta urinadi
+                }
+            }
+        }
+        try {
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                locationCallback!!,
+                Looper.getMainLooper() // Asosiy oqimda callbacklarni olish uchun
             )
+            Log.i("LocationService", "Requested location updates.")
+        } catch (unlikely: SecurityException) {
+            Log.e("LocationService", "Lost location permission. Reason: $unlikely")
+            // Bu holat kamdan-kam, lekin ruxsat bekor qilingan bo'lsa yuz berishi mumkin
+            stopSelf() // Xizmatni to'xtatish
         }
     }
 
     private fun stopLocationUpdates() {
-        locationListener?.let {
-            locationManager?.removeUpdates(it)
-            locationListener = null
+        if (locationCallback != null) {
+            Log.d("LocationService", "Stopping location updates.")
+            fusedLocationClient.removeLocationUpdates(locationCallback!!)
+            locationCallback = null
         }
     }
 
