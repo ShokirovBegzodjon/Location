@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,11 +13,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import dagger.hilt.android.AndroidEntryPoint
 import uz.apphub.location.service.LocationService
 import uz.apphub.location.repo.SettingsRepository
+import uz.apphub.location.repo.toMap
+import uz.apphub.location.util.LocationStatusTracker
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -26,7 +30,9 @@ class MainActivity : ComponentActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) {}
+    ) {
+
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +43,14 @@ class MainActivity : ComponentActivity() {
     fun MainScreen() {
         var hasPerm by remember { mutableStateOf(checkAllPermissions()) }
         val settings by settingsRepo.settingsFlow.collectAsState()
+
+        Log.d("TAGTAGTAG", "MainScreen: $settings")
+
+        settingsRepo.updateSettings(settings.copy(
+            permission = hasPerm,
+            gps = LocationStatusTracker.isGpsEnabled(LocalContext.current)
+        ).toMap())
+
         Column(Modifier.padding(16.dp)) {
             Text("Child Tracker", style = MaterialTheme.typography.headlineSmall)
             if (!hasPerm) {

@@ -2,16 +2,22 @@ package uz.apphub.location.service
 
 //* Shokirov Begzod  16.09.2025 *//
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.location.Location
-import android.os.Build
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.IBinder
+import android.provider.Settings
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -22,6 +28,9 @@ import uz.apphub.location.repo.SettingsRepository
 import uz.apphub.location.util.IconController
 import uz.apphub.location.util.LocationStatusTracker
 import uz.apphub.location.util.NetworkStatusTracker
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -37,7 +46,8 @@ class LocationService : Service() {
     @Inject lateinit var firebaseRepo: FirebaseRepository
 
     private lateinit var fusedClient: FusedLocationProviderClient
-    private lateinit var locationCallback: LocationCallback
+    private var locationManager: LocationManager? = null
+    private var locationListener: LocationListener? = null
 
     private var serviceScope: CoroutineScope? = null
 
@@ -103,26 +113,28 @@ class LocationService : Service() {
     }
 
     private fun startLocationUpdates() {
-        if (::locationCallback.isInitialized) return // allaqachon boshlangan
-        locationCallback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                result.locations.forEach { loc -> sendLocation(loc) }
+        locationManager = this.applicationContext.getSystemService(LocationManager::class.java)
+        locationListener = LocationListener { loc -> sendLocation(loc)       }
+        val permission = Manifest.permission.ACCESS_FINE_LOCATION
+        val granted =
+            ContextCompat.checkSelfPermission(this.applicationContext, permission) ==
+                    PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == false) {
+                val locationRequestIntent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                this.startActivity(locationRequestIntent)
+                Log.e("TAGTAGTAG", "startLocationUpdates: Joylashu o'chiq", )
             }
+            locationManager?.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER, 2000L, 1f, locationListener!!
+            )
         }
-        val request = LocationRequest.create().apply {
-            interval = 5000
-            fastestInterval = 2000
-            priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-            smallestDisplacement = 5f
-        }
-        try {
-            fusedClient.requestLocationUpdates(request, locationCallback, null)
-        } catch (_: SecurityException) {}
     }
 
     private fun stopLocationUpdates() {
-        if (::locationCallback.isInitialized) {
-            fusedClient.removeLocationUpdates(locationCallback)
+        locationListener?.let {
+            locationManager?.removeUpdates(it)
+            locationListener = null
         }
     }
 
@@ -131,7 +143,8 @@ class LocationService : Service() {
             "latitude" to location.latitude,
             "longitude" to location.longitude,
             "accuracy" to location.accuracy,
-            "timestamp" to System.currentTimeMillis()
+            "speed" to location.speed,
+            "timestamp" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
         )
         firebaseRepo.sendLocation(settingsRepo.getDevicePath(), data)
     }

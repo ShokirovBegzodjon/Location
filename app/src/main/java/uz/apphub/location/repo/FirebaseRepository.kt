@@ -11,7 +11,10 @@ class FirebaseRepository @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
     fun sendLocation(devicePath: String, locationData: Map<String, Any?>) {
-        firestore.collection("$devicePath/locations")
-            .add(locationData)
+        firestore.document(devicePath).update(
+            mapOf(
+                "locations" to locationData
+            )
+        )
     }
 }
