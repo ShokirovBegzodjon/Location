@@ -8,74 +8,101 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import dagger.hilt.android.AndroidEntryPoint
+import uz.apphub.location.repo.AppSettings
+import uz.apphub.location.repo.Settings.ALL_PERMISSION
+import uz.apphub.location.repo.Settings.PERMISSION
 import uz.apphub.location.service.LocationService
 import uz.apphub.location.repo.SettingsRepository
 import uz.apphub.location.repo.toMap
+import uz.apphub.location.ui.theme.LocationTheme
 import uz.apphub.location.util.LocationStatusTracker
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject lateinit var settingsRepo: SettingsRepository
+    @Inject
+    lateinit var settingsRepo: SettingsRepository
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
+        Log.d("TAGTAG", "MainActivity; permissionLauncher: $it")
+        settingsRepo.updateSettings(
+            mapOf(
+                PERMISSION to checkPermissions(),
+                ALL_PERMISSION to checkAllPermissions(),
+            )
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent { MainScreen() }
+        settingsRepo.updateSettings(
+            AppSettings(
+                permission = checkPermissions(),
+                allPermission = checkAllPermissions(),
+                gps = LocationStatusTracker.isGpsEnabled(this),
+                devicePath = settingsRepo.getDevicePath().substring(6)
+            ).toMap()
+        )
+        if (!checkAllPermissions()) {
+            Log.d("TAGTAG", "MAIN; onCreate: requestAllPermissions")
+            requestAllPermissions()
+        }
+        startTrackingService()
     }
 
     @Composable
     fun MainScreen() {
-        var hasPerm by remember { mutableStateOf(checkAllPermissions()) }
-        val settings by settingsRepo.settingsFlow.collectAsState()
-
-        Log.d("TAGTAGTAG", "MainScreen: $settings")
-
-        settingsRepo.updateSettings(settings.copy(
-            permission = hasPerm,
-            gps = LocationStatusTracker.isGpsEnabled(LocalContext.current)
-        ).toMap())
-
-        Column(Modifier.padding(16.dp)) {
-            Text("Child Tracker", style = MaterialTheme.typography.headlineSmall)
-            if (!hasPerm) {
-                Button(onClick = { requestAllPermissions() }, modifier = Modifier.padding(top = 16.dp)) {
-                    Text("Ruxsatlarni so'rash")
+        LocationTheme {
+            Scaffold(
+                modifier = Modifier.fillMaxSize()
+            ) { paddingValues ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Image(
+                        modifier = Modifier.size(200.dp),
+                        painter = painterResource(id = R.drawable.map_image),
+                        contentDescription = null
+                    )
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(40.dp),
+                    )
                 }
-            } else {
-                Button(onClick = { startTrackingService() }, modifier = Modifier.padding(top = 16.dp)) {
-                    Text("Yuborishni boshlash")
-                }
-                Button(onClick = { stopTrackingService() }, modifier = Modifier.padding(top = 8.dp)) {
-                    Text("To'xtatish")
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Server sozlamalari holati:")
-                Text("permission: ${settings.permission}")
-                Text("gps: ${settings.gps}")
-                Text("listener: ${settings.listener}")
-                Text("showIcon: ${settings.showIcon}")
             }
-            LaunchedEffect(Unit) { hasPerm = checkAllPermissions() }
         }
     }
 
     private fun requestAllPermissions() {
-        val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        val perms = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             perms.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         }
@@ -86,23 +113,65 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkAllPermissions(): Boolean {
-        val fine = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val fine = ActivityCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) ==
+                PackageManager.PERMISSION_GRANTED
+        val coarse = ActivityCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) ==
+                PackageManager.PERMISSION_GRANTED
         val bg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED else true
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED else true
         val notifications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
         else true
         return fine && coarse && bg && notifications
     }
 
+    private fun checkPermissions(): Boolean {
+        val fine = ActivityCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val coarse = ActivityCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val notifications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        else true
+        return fine && coarse && notifications
+    }
+
     private fun startTrackingService() {
-        val intent = Intent(this, LocationService::class.java).apply { action = LocationService.ACTION_START }
+        Log.d("TAGTAG", "MAIN; startTrackingService")
+        val intent = Intent(this, LocationService::class.java).apply {
+            action = LocationService.ACTION_START
+        }
         startForegroundService(intent)
     }
 
     private fun stopTrackingService() {
-        val intent = Intent(this, LocationService::class.java).apply { action = LocationService.ACTION_STOP }
+        Log.d("TAGTAG", "MAIN; stopTrackingService")
+        val intent =
+            Intent(
+                this,
+                LocationService::class.java
+            ).apply {
+                action = LocationService.ACTION_STOP
+            }
         startService(intent)
     }
 }

@@ -5,8 +5,10 @@ package uz.apphub.location.repo
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import javax.inject.Inject
@@ -36,8 +38,17 @@ class SettingsRepository @Inject constructor(
                     val gps = snapshot.getBoolean("gps") ?: false
                     val listener = snapshot.getBoolean("listener") ?: false
                     val showIcon = snapshot.getBoolean("showIcon") ?: true
-                    _settingsFlow.value = AppSettings(permission, gps, listener, showIcon)
+                    _settingsFlow.value = AppSettings(
+                        permission,
+                        gps,
+                        listener,
+                        showIcon
+                    )
                 }
+                Log.d(
+                    "TAGTAG",
+                    "Settings repo; listenToSettings: ${_settingsFlow.value}"
+                )
             }
     }
 
@@ -46,14 +57,21 @@ class SettingsRepository @Inject constructor(
     }
 
     fun updateSettings(settingsData: Map<String, Any?>) {
-        firestore.document(getDevicePath())
-            .update(settingsData)
+        Log.d("TAGTAG", "Settings repo; updateSettings: $settingsData")
+        firestore.document(devicePath)
+            .set(
+                settingsData,
+                SetOptions.merge()
+            )
     }
 
 
     @SuppressLint("HardwareIds")
     private fun getDeviceId(): String {
-        val id = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
+        val id = android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID
+        )
         val name = android.os.Build.MODEL ?: "Android"
         return "${name}_$id"
     }
